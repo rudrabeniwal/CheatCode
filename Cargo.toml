@@ -1,7 +1,9 @@
 [package]
 name = "CheatCode"
 version = "0.1.0"
+authors = ["Rudra Beniwal <rudrabeniwal86@gmail.com"]
 edition = "2021"
 
 [dependencies]
-winapi = { version = "0.3.9", features = ["psapi", "processthreadsapi", "handleapi", "winnt"] }
+crossterm = "0.19.0"
+winapi = { version = "0.3.9", features = ["psapi", "processthreadsapi", "handleapi",  "memoryapi", "winnt"] }

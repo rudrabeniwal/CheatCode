@@ -73,6 +73,24 @@ impl Process {
         .ok_or_else(io::Error::last_os_error)
     }
 
+    pub fn memory_regions(&self) -> Vec<winapi::um::winnt::MEMORY_BASIC_INFORMATION> {
+        let mut base = 0;
+        let mut regions = Vec::new();
+        let mut info = MaybeUninit::uninit();
+
+        loop {
+            let written = unsafe {
+                winapi::um::memoryapi::VirtualQueryEx(self.handle.as_ptr(), base as *const _, info.as_mut_ptr(), mem::size_of::<winapi::um::winnt::MEMORY_BASIC_INFORMATION>())
+            };
+            if written == 0{
+                break regions;
+            }
+            let info = unsafe { info.assume_init() };
+            base = info.BaseAddress as usize + info.RegionSize;
+            regions.push(info);
+        }
+    }
+
     pub fn read_memory(&self, addr: usize, n: usize) -> io::Result<Vec<u8>> {
         let mut buffer = Vec::<u8>::with_capacity(n);
         let mut read = 0;
@@ -122,4 +140,6 @@ fn main() {
     let item = ui::list_picker(&processes);
     let process = Process::open(item.pid).unwrap();
     println!("Opened process {:?}", process);
+
+    dbg!(process.memory_regions().len());
 }

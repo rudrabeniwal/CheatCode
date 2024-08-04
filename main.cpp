@@ -17,7 +17,7 @@ public:
         if ( GetLastError() == 5){
                 std::cerr << "Failed to open process. Error: Access Denied" << std::endl;
             } else{
-                std::cerr << "Failed to open process. Error: " << GetLastError() << std::endl;
+            //ignore
             }
     }
 
@@ -138,21 +138,42 @@ int main() {
                 }
                 int32_t target = 100; // The value we're looking for
                 std::vector<uint8_t> targetBytes = proc.to_ne_bytes(target); // Converting target to byte array
-
-                // Replace the mystery with action!
+                std::vector<size_t> locations;
+             
                 for (const auto& region : filteredRegions) {
+                    
                     try {
                         auto memory = proc.readMemory(reinterpret_cast<uintptr_t>(region.BaseAddress), region.RegionSize);
-
+                        
                         for (size_t offset = 0; offset <= memory.size() - targetBytes.size(); offset += 4) {
+                            
                             if (std::equal(targetBytes.begin(), targetBytes.end(), memory.begin() + offset)) {
-                                std::cout << "Found exact value at [" << region.BaseAddress << "+" << std::hex << offset << "]" << std::endl;
+                                locations.push_back(reinterpret_cast<size_t>(region.BaseAddress) + offset);
                             }
                         }
-                    } catch (const std::exception& err) {
                         
+                    } catch (const std::exception& err) {
+                        // Ignore Errors
+                    }
+                    
+                }
+                
+                std::cout<< "First scan for pid:  "<< pid << ", Locations of exact match = "<< locations.size() << std::endl;
+
+                // Performing the second scan on the found locations
+                std::vector<size_t> newLocations;
+                for (auto addr : locations) {
+                    try {
+                        auto memory = proc.readMemory(addr, targetBytes.size());
+                        if (std::equal(targetBytes.begin(), targetBytes.end(), memory.begin())) {
+                            newLocations.push_back(addr);
+                        }
+                    } catch (...) {
+                        // Ignore errors for now
                     }
                 }
+                locations = std::move(newLocations);
+                std::cout<< "Second scan for pid:  "<< pid << ", Locations of exact match = "<< locations.size() << std::endl;
 
             } else {
                 ++failed;

@@ -3,6 +3,12 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <algorithm>
+#include <functional>
+#include <numeric>
+#include <cstdint>
+
+#define PAGE_FLAGS (PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_READWRITE | PAGE_WRITECOPY)
 
 class Process {
 public:
@@ -21,6 +27,13 @@ public:
         }
     }
 
+    // Converts a 32-bit integer to a byte array in native endianness
+    std::vector<uint8_t> to_ne_bytes(int32_t value) {
+        std::vector<uint8_t> bytes(sizeof(value));
+        memcpy(bytes.data(), &value, sizeof(value));
+        return bytes;
+    }
+
     std::string name() const {
         HMODULE module;
         DWORD bytesReturned;
@@ -37,10 +50,51 @@ public:
 
         return std::string(buffer);
     }
-
+    
     HANDLE getHandle() const {
         return handle_;
     }
+
+    std::vector<BYTE> readMemory(uintptr_t addr, size_t size) const {
+        std::vector<BYTE> buffer(size);
+        SIZE_T bytesRead;
+        if (ReadProcessMemory(handle_, reinterpret_cast<LPCVOID>(addr), buffer.data(), size, &bytesRead)) {
+            buffer.resize(bytesRead);
+            return buffer;
+        }
+        throw std::runtime_error("Failed to read memory");
+    }
+
+    std::vector<MEMORY_BASIC_INFORMATION> memoryRegions() const {
+        std::vector<MEMORY_BASIC_INFORMATION> regions;
+        MEMORY_BASIC_INFORMATION mbi;
+        LPCVOID address = nullptr;
+
+        while (VirtualQueryEx(handle_, address, &mbi, sizeof(mbi))) {
+            regions.push_back(mbi);
+            address = (LPCVOID)((uintptr_t)mbi.BaseAddress + mbi.RegionSize);
+        }
+        return regions;
+    }
+
+    SIZE_T calculateMemorySizeExcludingNoAccess() const {
+        SIZE_T totalSize = 0;
+        auto regions = memoryRegions();
+
+        for (const auto& region : regions) {
+            if (region.Protect != PAGE_NOACCESS) {
+                totalSize += region.RegionSize;
+            }
+        }
+
+        return totalSize;
+    }
+
+    size_t totalWritableMemory(const std::vector<MEMORY_BASIC_INFORMATION>& regions) {
+    return std::accumulate(regions.begin(), regions.end(), 0ul, [](size_t sum, const MEMORY_BASIC_INFORMATION& mbi) {
+        return (mbi.Protect & PAGE_FLAGS) != 0 ? sum + mbi.RegionSize : sum;
+    });
+}
 
 private:
     DWORD pid_;
@@ -64,22 +118,46 @@ int main() {
     auto pids = enumProc();
     int success = 0;
     int failed = 0;
-
     for (DWORD pid : pids) {
         Process proc(pid);
         if (proc.getHandle() != NULL) {
             std::string name = proc.name();
             if (!name.empty()) {
-                std::cout << pid << ": " << name << std::endl;
                 ++success;
+
+                // Calculate the total memory size excluding PAGE_NOACCESS
+                auto regions = proc.memoryRegions();
+                std::vector<MEMORY_BASIC_INFORMATION> filteredRegions;
+
+                for (const auto& region : regions) {
+                    if ((region.Protect & PAGE_FLAGS) != 0) {
+                        filteredRegions.push_back(region);
+                    }
+                }
+                int32_t target = 100; // The value we're looking for
+                std::vector<uint8_t> targetBytes = proc.to_ne_bytes(target); // Converting target to byte array
+
+                // Replace the mystery with action!
+                for (const auto& region : filteredRegions) {
+                    try {
+                        auto memory = proc.readMemory(reinterpret_cast<uintptr_t>(region.BaseAddress), region.RegionSize);
+
+                        for (size_t offset = 0; offset <= memory.size() - targetBytes.size(); offset += 4) {
+                            if (std::equal(targetBytes.begin(), targetBytes.end(), memory.begin() + offset)) {
+                                std::cout << "Found exact value at [" << region.BaseAddress << "+" << std::hex << offset << "]" << std::endl;
+                            }
+                        }
+                    } catch (const std::exception& err) {
+                        
+                    }
+                }
+
             } else {
                 ++failed;
             }
         } else {
             ++failed;
         }
-    }
-
-    std::cerr << "Successfully retrieved names for " << success << "/" << (success + failed) << " processes" << std::endl;
+    }    
     return 0;
 }

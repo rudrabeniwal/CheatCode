@@ -14,9 +14,11 @@ class Process {
 public:
     explicit Process(DWORD pid) 
         : pid_(pid), handle_(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid)) {
-        if (handle_ == NULL) {
-            std::cerr << "Failed to open process. Error: " << GetLastError() << std::endl;
-        }
+        if ( GetLastError() == 5){
+                std::cerr << "Failed to open process. Error: Access Denied" << std::endl;
+            } else{
+                std::cerr << "Failed to open process. Error: " << GetLastError() << std::endl;
+            }
     }
 
     ~Process() {

@@ -13,9 +13,8 @@
 class Process {
 public:
     explicit Process(DWORD pid) 
-        : pid_(pid), handle_(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid)) {
+        : pid_(pid), handle_(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid)) {
         if ( GetLastError() == 5){
-                std::cerr << "Failed to open process. Error: Access Denied" << std::endl;
             } else{
             //ignore
             }
@@ -40,7 +39,6 @@ public:
         HMODULE module;
         DWORD bytesReturned;
         if (!EnumProcessModules(handle_, &module, sizeof(module), &bytesReturned)) {
-            std::cerr << "Failed to enumerate process modules. Error: " << GetLastError() << std::endl;
             return {};
         }
 
@@ -67,6 +65,14 @@ public:
         throw std::runtime_error("Failed to read memory");
     }
 
+    size_t writeMemory(HANDLE processHandle, uintptr_t addr, const std::vector<uint8_t>& value) {
+    SIZE_T written = 0;
+    if (!WriteProcessMemory(processHandle, reinterpret_cast<LPVOID>(addr), value.data(), value.size(), &written)) {
+        throw std::runtime_error("Failed to write memory: " + std::to_string(GetLastError()));
+    }
+    return written;
+}
+
     std::vector<MEMORY_BASIC_INFORMATION> memoryRegions() const {
         std::vector<MEMORY_BASIC_INFORMATION> regions;
         MEMORY_BASIC_INFORMATION mbi;
@@ -78,25 +84,6 @@ public:
         }
         return regions;
     }
-
-    SIZE_T calculateMemorySizeExcludingNoAccess() const {
-        SIZE_T totalSize = 0;
-        auto regions = memoryRegions();
-
-        for (const auto& region : regions) {
-            if (region.Protect != PAGE_NOACCESS) {
-                totalSize += region.RegionSize;
-            }
-        }
-
-        return totalSize;
-    }
-
-    size_t totalWritableMemory(const std::vector<MEMORY_BASIC_INFORMATION>& regions) {
-    return std::accumulate(regions.begin(), regions.end(), 0ul, [](size_t sum, const MEMORY_BASIC_INFORMATION& mbi) {
-        return (mbi.Protect & PAGE_FLAGS) != 0 ? sum + mbi.RegionSize : sum;
-    });
-}
 
 private:
     DWORD pid_;
@@ -136,7 +123,7 @@ int main() {
                         filteredRegions.push_back(region);
                     }
                 }
-                int32_t target = 100; // The value we're looking for
+                int32_t target = 73571783; // The value we're looking for
                 std::vector<uint8_t> targetBytes = proc.to_ne_bytes(target); // Converting target to byte array
                 std::vector<size_t> locations;
              
@@ -157,9 +144,6 @@ int main() {
                     }
                     
                 }
-                
-                std::cout<< "First scan for pid:  "<< pid << ", Locations of exact match = "<< locations.size() << std::endl;
-
                 // Performing the second scan on the found locations
                 std::vector<size_t> newLocations;
                 for (auto addr : locations) {
@@ -173,7 +157,23 @@ int main() {
                     }
                 }
                 locations = std::move(newLocations);
-                std::cout<< "Second scan for pid:  "<< pid << ", Locations of exact match = "<< locations.size() << std::endl;
+                if ( locations.size() != 0){
+                std::cout << "Name: "<< name <<  " Pid: "<< pid << ", Locations of exact match = "<< locations.size() << std::endl;
+                }
+
+                if ( pid == 26156){
+                    int32_t newValue = 1000;
+                    std::vector<uint8_t> newValueBytes = proc.to_ne_bytes(newValue);
+    
+                    for (const auto& addr : locations) {
+                        try {
+                            size_t bytesWritten = proc.writeMemory(proc.getHandle(), addr, newValueBytes);
+                            std::cout << "Written " << bytesWritten << " bytes to [" << std::hex << addr << "]\n";
+                        } catch (const std::exception& e) {
+                            std::cerr << "Failed to write to [" << std::hex << addr << "]: " << e.what() << "\n";
+                        }
+                    }
+                }
 
             } else {
                 ++failed;

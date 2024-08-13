@@ -31,5 +31,6 @@ private:
 
 std::vector<DWORD> enumProc();
 std::vector<size_t> exactValueScan(Process& proc, int32_t target);
+std::vector<size_t> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue);
 
 #endif // PROCESS_H

@@ -129,3 +129,52 @@ std::vector<size_t> exactValueScan(Process& proc, int32_t target) {
 
     return newLocations;
 }
+
+std::vector<size_t> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue) {
+    auto regions = proc.memoryRegions();
+    std::vector<MEMORY_BASIC_INFORMATION> filteredRegions;
+
+    for (const auto& region : regions) {
+        if ((region.Protect & PAGE_FLAGS) != 0) {
+            filteredRegions.push_back(region);
+        }
+    }
+
+    std::vector<size_t> locations;
+
+    for (const auto& region : filteredRegions) {
+        try {
+            auto memory = proc.readMemory(reinterpret_cast<uintptr_t>(region.BaseAddress), region.RegionSize);
+
+            for (size_t offset = 0; offset <= memory.size() - sizeof(int32_t); offset += 4) {
+                int32_t value;
+                memcpy(&value, memory.data() + offset, sizeof(int32_t));
+
+                if (value >= minValue && value <= maxValue) {
+                    locations.push_back(reinterpret_cast<size_t>(region.BaseAddress) + offset);
+                }
+            }
+
+        } catch (const std::exception& err) {
+            // Ignore Errors
+        }
+    }
+
+    // Performing the second scan on the found locations
+    std::vector<size_t> newLocations;
+    for (auto addr : locations) {
+        try {
+            auto memory = proc.readMemory(addr, sizeof(int32_t));
+            int32_t value;
+            memcpy(&value, memory.data(), sizeof(int32_t));
+
+            if (value >= minValue && value <= maxValue) {
+                newLocations.push_back(addr);
+            }
+        } catch (...) {
+            // Ignore errors for now
+        }
+    }
+
+    return newLocations;
+}

@@ -23,9 +23,25 @@ void runUI() {
     std::cout << "\nEnter PID of the process to scan: ";
     std::cin >> pid;
 
+    char scanType;
+    std::cout << "Scan for exact value or range? (e/r): ";
+    std::cin >> scanType;
+
     int32_t targetValue;
-    std::cout << "Enter the target value to scan for: ";
-    std::cin >> targetValue;
+    int32_t minValue, maxValue;
+
+    if (scanType == 'e') {
+        std::cout << "Enter the target value to scan for: ";
+        std::cin >> targetValue;
+    } else if (scanType == 'r') {
+        std::cout << "Enter the minimum value: ";
+        std::cin >> minValue;
+        std::cout << "Enter the maximum value: ";
+        std::cin >> maxValue;
+    } else {
+        std::cerr << "Invalid input. Exiting...\n";
+        return;
+    }
 
     Process proc(pid);
     if (proc.getHandle() == NULL) {
@@ -33,9 +49,16 @@ void runUI() {
         return;
     }
 
-    std::vector<size_t> locations = exactValueScan(proc, targetValue);
+    std::vector<size_t> locations;
+
+    if (scanType == 'e') {
+        locations = exactValueScan(proc, targetValue);
+    } else if (scanType == 'r') {
+        locations = rangeValueScan(proc, minValue, maxValue);
+    }
+
     if (!locations.empty()) {
-        std::cout << "Found " << locations.size() << " locations with the exact value.\n";
+        std::cout << "Found " << locations.size() << " locations with the specified value(s).\n";
         for (size_t loc : locations) {
             std::cout << "Address: " << std::hex << loc << std::endl;
         }
@@ -55,6 +78,6 @@ void runUI() {
             }
         }
     } else {
-        std::cout << "No locations found with the exact value.\n";
+        std::cout << "No locations found with the specified value(s).\n";
     }
 }

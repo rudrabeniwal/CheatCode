@@ -23,61 +23,119 @@ void runUI() {
     std::cout << "\nEnter PID of the process to scan: ";
     std::cin >> pid;
 
-    char scanType;
-    std::cout << "Scan for exact value or range? (e/r): ";
+    Process proc(pid);
+
+    std::vector<MemoryRegion> potentialRegions;
+
+    int scanType;
+    std::cout << "Select scan type:\n";
+    std::cout << "1. Exact Value Scan\n";
+    std::cout << "2. Range Value Scan\n";
+    std::cout << "Enter choice: ";
     std::cin >> scanType;
 
-    int32_t targetValue;
-    int32_t minValue, maxValue;
-
-    if (scanType == 'e') {
-        std::cout << "Enter the target value to scan for: ";
-        std::cin >> targetValue;
-    } else if (scanType == 'r') {
+    if (scanType == 1) {
+        int32_t target;
+        std::cout << "Enter the exact value to scan for: ";
+        std::cin >> target;
+        potentialRegions = exactValueScan(proc, target);
+    } else if (scanType == 2) {
+        int32_t minValue, maxValue;
         std::cout << "Enter the minimum value: ";
         std::cin >> minValue;
         std::cout << "Enter the maximum value: ";
         std::cin >> maxValue;
+        potentialRegions = rangeValueScan(proc, minValue, maxValue);
     } else {
-        std::cerr << "Invalid input. Exiting...\n";
+        std::cerr << "Invalid choice\n";
         return;
     }
 
-    Process proc(pid);
-    if (proc.getHandle() == NULL) {
-        std::cerr << "Failed to open process with PID: " << pid << std::endl;
-        return;
+    if (potentialRegions.empty()) {
+            std::cout << "No matching regions found.\n";
+        } else {
+            std::cout << std::endl;
+            std::cout << "!! Found " << potentialRegions.size() << " matching regions !!\n";
     }
 
-    std::vector<size_t> locations;
+    int followUpScanType;
+    while (true) {
+        std::cout << std::endl;
+        std::cout << "Select follow-up scan type:\n";
+        std::cout << "1. Increased Value\n";
+        std::cout << "2. Increased Value By...\n";
+        std::cout << "3. Decreased Value\n";
+        std::cout << "4. Decreased Value By...\n";
+        std::cout << "5. Changed Value\n";
+        std::cout << "6. Unchanged Value\n";
+        std::cout << "=> 7. Proceed to the Next Step =>\n";
+        std::cout << "8. Exit X|\n";
+        std::cout << "Enter choice: ";
+        std::cin >> followUpScanType;
 
-    if (scanType == 'e') {
-        locations = exactValueScan(proc, targetValue);
-    } else if (scanType == 'r') {
-        locations = rangeValueScan(proc, minValue, maxValue);
-    }
-
-    if (!locations.empty()) {
-        std::cout << "Found " << locations.size() << " locations with the specified value(s).\n";
-        for (size_t loc : locations) {
-            std::cout << "Address: " << std::hex << loc << std::endl;
-        }
-
-        int32_t newValue;
-        std::cout << "\nEnter new value to write: ";
-        std::cin >> newValue;
-
-        std::vector<uint8_t> newValueBytes = proc.to_ne_bytes(newValue);
-
-        for (const auto& addr : locations) {
-            try {
-                size_t bytesWritten = proc.writeMemory(proc.getHandle(), addr, newValueBytes);
-                std::cout << "Written " << bytesWritten << " bytes to [" << std::hex << addr << "]\n";
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to write to [" << std::hex << addr << "]: " << e.what() << "\n";
+        switch (followUpScanType) {
+            case 1:
+                potentialRegions = increasedValueScan(proc, potentialRegions);
+                break;
+            case 2: {
+                int32_t amount;
+                std::cout << "Enter the amount: ";
+                std::cin >> amount;
+                potentialRegions = increasedValueByScan(proc, potentialRegions, amount);
+                break;
             }
+            case 3:
+                potentialRegions = decreasedValueScan(proc, potentialRegions);
+                break;
+            case 4: {
+                int32_t amount;
+                std::cout << "Enter the amount: ";
+                std::cin >> amount;
+                potentialRegions = decreasedValueByScan(proc, potentialRegions, amount);
+                break;
+            }
+            case 5:
+                potentialRegions = changedValueScan(proc, potentialRegions);
+                break;
+            case 6:
+                potentialRegions = unchangedValueScan(proc, potentialRegions);
+                break;
+            case 7: {
+                if (potentialRegions.empty()) {
+                    std::cout << "No regions available for writing.\n";
+                    break;
+                }
+
+                int32_t newValue;
+                std::cout << "Enter the new value to write: ";
+                std::cin >> newValue;
+
+                auto newValueBytes = proc.to_ne_bytes(newValue);
+
+                for (const auto& region : potentialRegions) {
+                    try {
+                        size_t written = proc.writeMemory(proc.getHandle(), region.address, newValueBytes);
+                        std::cout << "Wrote " << written << " bytes to address 0x" << std::hex << region.address << std::dec << ".\n";
+                    } catch (const std::exception& ex) {
+                        std::cerr << "Failed to write to address 0x" << std::hex << region.address << ": " << ex.what() << std::dec << "\n";
+                    }
+                }
+
+                break;
+            }
+            case 8:
+                return;
+            default:
+                std::cerr << "Invalid choice\n";
+                continue;
         }
-    } else {
-        std::cout << "No locations found with the specified value(s).\n";
+
+        if (potentialRegions.empty()) {
+            std::cout << "No matching regions found.\n";
+            break;
+        } else {
+            std::cout << std::endl;
+            std::cout << "!! Found " << potentialRegions.size() << " matching regions !!\n";
+        }
     }
 }

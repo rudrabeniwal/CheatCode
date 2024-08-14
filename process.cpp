@@ -86,9 +86,131 @@ std::vector<DWORD> enumProc() {
     return pids;
 }
 
-std::vector<size_t> exactValueScan(Process& proc, int32_t target) {
+std::vector<MemoryRegion> increasedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue > region.value) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+std::vector<MemoryRegion> increasedValueByScan(Process& proc, const std::vector<MemoryRegion>& previousRegions, int32_t amount) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue == region.value + amount) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+std::vector<MemoryRegion> decreasedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue < region.value) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+std::vector<MemoryRegion> decreasedValueByScan(Process& proc, const std::vector<MemoryRegion>& previousRegions, int32_t amount) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue == region.value - amount) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+std::vector<MemoryRegion> changedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue != region.value) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+std::vector<MemoryRegion> unchangedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions) {
+    std::vector<MemoryRegion> newRegions;
+
+    for (const auto& region : previousRegions) {
+        try {
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
+            int32_t newValue;
+            memcpy(&newValue, memory.data(), sizeof(int32_t));
+
+            if (newValue == region.value) {
+                newRegions.push_back({region.address, newValue});
+            }
+        } catch (...) {
+            // Ignore errors
+        }
+    }
+
+    return newRegions;
+}
+
+// Modify the existing scan functions to return MemoryRegion
+std::vector<MemoryRegion> exactValueScan(Process& proc, int32_t target) {
     auto regions = proc.memoryRegions();
     std::vector<MEMORY_BASIC_INFORMATION> filteredRegions;
+    std::vector<MemoryRegion> locations;
 
     for (const auto& region : regions) {
         if ((region.Protect & PAGE_FLAGS) != 0) {
@@ -96,8 +218,7 @@ std::vector<size_t> exactValueScan(Process& proc, int32_t target) {
         }
     }
 
-    std::vector<uint8_t> targetBytes = proc.to_ne_bytes(target); // Converting target to byte array
-    std::vector<size_t> locations;
+    std::vector<uint8_t> targetBytes = proc.to_ne_bytes(target);
 
     for (const auto& region : filteredRegions) {
         try {
@@ -105,7 +226,9 @@ std::vector<size_t> exactValueScan(Process& proc, int32_t target) {
 
             for (size_t offset = 0; offset <= memory.size() - targetBytes.size(); offset += 4) {
                 if (std::equal(targetBytes.begin(), targetBytes.end(), memory.begin() + offset)) {
-                    locations.push_back(reinterpret_cast<size_t>(region.BaseAddress) + offset);
+                    int32_t foundValue;
+                    memcpy(&foundValue, memory.data() + offset, sizeof(int32_t));
+                    locations.push_back({reinterpret_cast<size_t>(region.BaseAddress) + offset, foundValue});
                 }
             }
 
@@ -114,33 +237,20 @@ std::vector<size_t> exactValueScan(Process& proc, int32_t target) {
         }
     }
 
-    // Performing the second scan on the found locations
-    std::vector<size_t> newLocations;
-    for (auto addr : locations) {
-        try {
-            auto memory = proc.readMemory(addr, targetBytes.size());
-            if (std::equal(targetBytes.begin(), targetBytes.end(), memory.begin())) {
-                newLocations.push_back(addr);
-            }
-        } catch (...) {
-            // Ignore errors for now
-        }
-    }
-
-    return newLocations;
+    return locations;
 }
 
-std::vector<size_t> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue) {
+std::vector<MemoryRegion> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue) {
     auto regions = proc.memoryRegions();
+    std::vector<MemoryRegion> locations;
+    
+    // Filter regions based on memory protection flags
     std::vector<MEMORY_BASIC_INFORMATION> filteredRegions;
-
     for (const auto& region : regions) {
         if ((region.Protect & PAGE_FLAGS) != 0) {
             filteredRegions.push_back(region);
         }
     }
-
-    std::vector<size_t> locations;
 
     for (const auto& region : filteredRegions) {
         try {
@@ -150,26 +260,26 @@ std::vector<size_t> rangeValueScan(Process& proc, int32_t minValue, int32_t maxV
                 int32_t value;
                 memcpy(&value, memory.data() + offset, sizeof(int32_t));
 
+                // Check if the value is within the specified range
                 if (value >= minValue && value <= maxValue) {
-                    locations.push_back(reinterpret_cast<size_t>(region.BaseAddress) + offset);
+                    locations.push_back({reinterpret_cast<size_t>(region.BaseAddress) + offset, value});
                 }
             }
-
         } catch (const std::exception& err) {
             // Ignore Errors
         }
     }
 
     // Performing the second scan on the found locations
-    std::vector<size_t> newLocations;
-    for (auto addr : locations) {
+    std::vector<MemoryRegion> newLocations;
+    for (auto& region : locations) {
         try {
-            auto memory = proc.readMemory(addr, sizeof(int32_t));
+            auto memory = proc.readMemory(region.address, sizeof(int32_t));
             int32_t value;
             memcpy(&value, memory.data(), sizeof(int32_t));
 
             if (value >= minValue && value <= maxValue) {
-                newLocations.push_back(addr);
+                newLocations.push_back({reinterpret_cast<size_t>(region.address), region.value});
             }
         } catch (...) {
             // Ignore errors for now

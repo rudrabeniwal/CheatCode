@@ -29,8 +29,21 @@ private:
     HANDLE handle_;
 };
 
+struct MemoryRegion {
+    size_t address;
+    int32_t value;
+};
+
 std::vector<DWORD> enumProc();
-std::vector<size_t> exactValueScan(Process& proc, int32_t target);
-std::vector<size_t> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue);
+std::vector<MemoryRegion> exactValueScan(Process& proc, int32_t target);
+std::vector<MemoryRegion> rangeValueScan(Process& proc, int32_t minValue, int32_t maxValue);
+
+// New scanning functions
+std::vector<MemoryRegion> increasedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions);
+std::vector<MemoryRegion> increasedValueByScan(Process& proc, const std::vector<MemoryRegion>& previousRegions, int32_t amount);
+std::vector<MemoryRegion> decreasedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions);
+std::vector<MemoryRegion> decreasedValueByScan(Process& proc, const std::vector<MemoryRegion>& previousRegions, int32_t amount);
+std::vector<MemoryRegion> changedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions);
+std::vector<MemoryRegion> unchangedValueScan(Process& proc, const std::vector<MemoryRegion>& previousRegions);
 
 #endif // PROCESS_H
